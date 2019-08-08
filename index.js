@@ -41,7 +41,7 @@ class Sign extends plugin_1.default {
             if (this._signList.get(uid) || !user.userData['doSign'])
                 return;
             const sign = {
-                uri: `https://api.live.bilibili.com/AppUser/getSignInfo?${plugin_1.AppClient.signQueryBase(user.tokenQuery)}`,
+                uri: `https://api.live.bilibili.com/rc/v1/Sign/doSign?${plugin_1.AppClient.signQueryBase(user.tokenQuery)}`,
                 json: true,
                 headers: user.headers
             };
