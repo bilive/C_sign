@@ -1,4 +1,3 @@
-import { Options as requestOptions } from 'request'
 import Plugin, { tools, AppClient } from '../../plugin'
 
 class Sign extends Plugin {
@@ -7,7 +6,7 @@ class Sign extends Plugin {
   }
   public name = '自动签到'
   public description = '每天自动签到'
-  public version = '0.0.1'
+  public version = '0.0.2'
   public author = 'lzghzr'
   /**
    * 任务表
@@ -29,59 +28,120 @@ class Sign extends Plugin {
     this.loaded = true
   }
   public async start({ users }: { users: Map<string, User> }) {
-    this._sign(users)
+    this._getSignInfo(users)
   }
   public async loop({ cstMin, cstHour, cstString, users }: { cstMin: number, cstHour: number, cstString: string, users: Map<string, User> }) {
     // 每天00:10刷新任务
     if (cstString === '00:10') this._signList.clear()
     // 每天04:30, 12:30, 20:30做任务
-    if (cstMin === 30 && cstHour % 8 === 4) this._sign(users)
+    if (cstMin === 30 && cstHour % 8 === 4) this._getSignInfo(users)
+  }
+  /**
+   * 获取签到信息
+   *
+   * @private
+   * @param {Map<string, User>} users
+   * @memberof Sign
+   */
+  private _getSignInfo(users: Map<string, User>) {
+    users.forEach(async (user, uid) => {
+      if (this._signList.get(uid) || !user.userData['doSign']) return
+      const sign: XHRoptions = {
+        url: `https://api.live.bilibili.com/rc/v2/Sign/getSignInfo?${AppClient.signQueryBase(user.tokenQuery)}`,
+        responseType: 'json',
+        headers: user.headers
+      }
+      const getSignInfo = await tools.XHR<getSignInfo>(sign, 'Android')
+      if (getSignInfo !== undefined && getSignInfo.response.statusCode === 200) {
+        if (getSignInfo.body.code === 0) {
+          if (getSignInfo.body.data.is_signed) tools.Log(user.nickname, '自动签到', '今日已签到过')
+          else await this._doSign(user, uid)
+        }
+        else tools.Log(user.nickname, '自动签到', getSignInfo.body)
+      }
+      else tools.Log(user.nickname, '自动签到', '网络错误')
+    })
   }
   /**
    * 自动签到
    *
    * @private
+   * @param {User} user
+   * @param {string} uid
    * @memberof Sign
    */
-  private _sign(users: Map<string, User>) {
-    users.forEach(async (user, uid) => {
-      if (this._signList.get(uid) || !user.userData['doSign']) return
-      const sign: requestOptions = {
-        uri: `https://api.live.bilibili.com/rc/v1/Sign/doSign?${AppClient.signQueryBase(user.tokenQuery)}`,
-        json: true,
-        headers: user.headers
+  private async _doSign(user: User, uid: string) {
+    const sign: XHRoptions = {
+      url: `https://api.live.bilibili.com/rc/v1/Sign/doSign?${AppClient.signQueryBase(user.tokenQuery)}`,
+      responseType: 'json',
+      headers: user.headers
+    }
+    const doSign = await tools.XHR<doSign>(sign, 'Android')
+    if (doSign !== undefined && doSign.response.statusCode === 200) {
+      if (doSign.body.code === 0) {
+        this._signList.set(uid, true)
+        tools.Log(user.nickname, '自动签到', '已签到')
       }
-      const signInfo = await tools.XHR<signInfo>(sign, 'Android')
-      if (signInfo !== undefined && signInfo.response.statusCode === 200) {
-        if (signInfo.body.code === 0 || signInfo.body.code === -500) {
-          this._signList.set(uid, true)
-          tools.Log(user.nickname, '自动签到', '已签到')
-        }
-        else tools.Log(user.nickname, '自动签到', signInfo.body)
-      }
-      else tools.Log(user.nickname, '自动签到', '网络错误')
-    })
+      else tools.Log(user.nickname, '自动签到', doSign.body)
+    }
+    else tools.Log(user.nickname, '自动签到', '网络错误')
   }
 }
-
 /**
  * 签到信息
  *
- * @interface signInfo
+ * @interface getSignInfo
  */
-interface signInfo {
+interface getSignInfo {
+  code: number
+  message: string
+  ttl: number
+  data: getSignInfoData
+}
+interface getSignInfoData {
+  is_signed: boolean
+  days: number
+  sign_days: number
+  h5_url: string
+  days_award: getSignInfoDataDaysAward[]
+  awards: getSignInfoDataAward[]
+}
+interface getSignInfoDataAward {
+  count: number
+  text: string
+  award: string
+  img: getSignInfoDataImg
+}
+interface getSignInfoDataDaysAward {
+  id: number
+  award: string
+  count: number
+  day: number
+  text: string
+  img: getSignInfoDataImg
+}
+interface getSignInfoDataImg {
+  src: string
+  width: number
+  height: number
+}
+/**
+ * 签到返回
+ *
+ * @interface doSign
+ */
+interface doSign {
   code: number
   msg: string
+  ttl: number
   data: signInfoData
 }
 interface signInfoData {
   text: string
-  status: number
-  allDays: string
-  curMonth: string
-  newTask: number
+  specialText: string
+  allDays: number
   hadSignDays: number
-  remindDays: number
+  isBonusDay: number
 }
 
 export default new Sign()
